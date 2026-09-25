@@ -1,0 +1,16 @@
+# Secrets & local-only files — never commit these
+config.json
+venv/
+__pycache__/
+*.log
+*.pid
+inbox/
+outbox/
+sent/
+failed/
+acked.json
+public_url.txt
+tunnel.log
+server.log
+PAUSED
+bin/

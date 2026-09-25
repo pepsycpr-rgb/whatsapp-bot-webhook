@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: whatsapp-bot-webhook
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn webhook:app --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: VERIFY_TOKEN
+        generateValue: true
+      - key: BRAIN_KEY
+        generateValue: true
