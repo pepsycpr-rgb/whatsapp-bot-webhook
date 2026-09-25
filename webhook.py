@@ -1,8 +1,13 @@
-"""WhatsApp Cloud API webhook receiver (production-ready).
+"""Meta webhook receiver: WhatsApp Cloud API + Instagram Messaging (production-ready).
 
-GET  /webhook  -> Meta verification (hub.verify_token vs VERIFY_TOKEN)
+GET  /webhook  -> Meta verification (hub.verify_token vs VERIFY_TOKEN).
+                  Same flow verifies both WhatsApp and Instagram subscriptions.
 POST /webhook  -> receives incoming messages, saves each text message as a JSON
                   file in inbox/ for the reply loop to pick up.
+                  WhatsApp payloads:  entry[].changes[].value.messages[]
+                  Instagram payloads: entry[].messaging[] (object="instagram").
+                  Instagram echoes of our own replies (is_echo) and non-text
+                  items (attachments, stickers, reactions, receipts) are ignored.
 GET  /pending  -> returns unacknowledged inbox messages (X-Brain-Key required).
                   Polled by the assistant's reply loop (outbound-friendly).
 POST /ack      -> marks message ids as handled: {"ids": ["file.json", ...]}
@@ -86,6 +91,53 @@ def _signature_ok(raw_body: bytes) -> bool:
     return hmac.compare_digest(expected, signature.split("=", 1)[1])
 
 
+def _save_inbox_record(record, sender, platform):
+    fname = "%d_%s_%s.json" % (record["received_at"], platform, sender)
+    with open(os.path.join(INBOX_DIR, fname), "w") as f:
+        json.dump(record, f, ensure_ascii=False, indent=2)
+
+
+def _handle_whatsapp_entry(entry):
+    for change in entry.get("changes", []):
+        value = change.get("value", {})
+        contacts = {c.get("wa_id"): c.get("profile", {}).get("name", "")
+                    for c in value.get("contacts", [])}
+        for msg in value.get("messages", []):
+            if msg.get("type") != "text":
+                continue
+            sender = msg.get("from", "unknown")
+            record = {
+                "platform": "whatsapp",
+                "sender": sender,
+                "name": contacts.get(sender, ""),
+                "text": (msg.get("text") or {}).get("body", ""),
+                "timestamp": msg.get("timestamp", str(int(time.time()))),
+                "received_at": int(time.time()),
+            }
+            _save_inbox_record(record, sender, "wa")
+
+
+def _handle_instagram_entry(entry):
+    for item in entry.get("messaging", []):
+        msg = item.get("message") or {}
+        if msg.get("is_echo"):
+            continue  # our own outgoing reply echoed back: never reply to it
+        text = msg.get("text", "")
+        if not text:
+            continue  # attachments, stickers, reactions, read receipts
+        sender = (item.get("sender") or {}).get("id", "unknown")
+        record = {
+            "platform": "instagram",
+            "sender": sender,
+            "name": "",
+            "text": text,
+            "timestamp": str(item.get("timestamp", int(time.time() * 1000))),
+            "received_at": int(time.time()),
+            "mid": msg.get("mid", ""),
+        }
+        _save_inbox_record(record, sender, "ig")
+
+
 @app.route("/webhook", methods=["POST"])
 def receive():
     raw_body = request.get_data()
@@ -98,25 +150,12 @@ def receive():
         return "ok", 200
 
     try:
-        for entry in payload.get("entry", []):
-            for change in entry.get("changes", []):
-                value = change.get("value", {})
-                contacts = {c.get("wa_id"): c.get("profile", {}).get("name", "")
-                            for c in value.get("contacts", [])}
-                for msg in value.get("messages", []):
-                    if msg.get("type") != "text":
-                        continue
-                    sender = msg.get("from", "unknown")
-                    record = {
-                        "sender": sender,
-                        "name": contacts.get(sender, ""),
-                        "text": (msg.get("text") or {}).get("body", ""),
-                        "timestamp": msg.get("timestamp", str(int(time.time()))),
-                        "received_at": int(time.time()),
-                    }
-                    fname = "%d_%s.json" % (record["received_at"], sender)
-                    with open(os.path.join(INBOX_DIR, fname), "w") as f:
-                        json.dump(record, f, ensure_ascii=False, indent=2)
+        if payload.get("object") == "instagram":
+            for entry in payload.get("entry", []):
+                _handle_instagram_entry(entry)
+        else:
+            for entry in payload.get("entry", []):
+                _handle_whatsapp_entry(entry)
     except Exception:
         # Never let a malformed payload break the webhook; Meta retries anyway.
         pass
