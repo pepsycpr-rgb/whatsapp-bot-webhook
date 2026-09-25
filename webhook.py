@@ -204,6 +204,38 @@ def ack():
     return jsonify({"acked": len(ids)}), 200
 
 
+@app.route("/privacy", methods=["GET"])
+def privacy():
+    """Public privacy policy page (required by Meta for app publishing)."""
+    return """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy Policy — MyShop Bot</title></head>
+<body style="font-family:sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.6">
+<h1>Privacy Policy — MyShop Bot</h1>
+<p><em>Last updated: 25 September 2026</em></p>
+<p>MyShop Bot provides automated replies to Instagram direct messages sent to the
+connected business Instagram account.</p>
+<h2>What data we process</h2>
+<ul>
+<li>The text of Instagram direct messages sent to the connected business account,
+used solely to generate an automated reply.</li>
+<li>Basic message metadata (sender's Instagram-scoped ID, timestamps) needed to
+route the reply to the right conversation.</li>
+</ul>
+<h2>How we use it</h2>
+<p>Message content is processed only to produce a reply in the same conversation.
+Recent conversation history may be kept temporarily so replies stay in context.</p>
+<h2>Sharing</h2>
+<p>We do not sell personal data. Data is handled through Meta's APIs and our
+hosting provider (Render) as required to operate the service.</p>
+<h2>Data retention &amp; deletion</h2>
+<p>Message records are kept only as long as needed for the service to function.
+You may request deletion of your data at any time via Instagram direct message
+to the connected business account.</p>
+</body></html>""", 200
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return "ok", 200
